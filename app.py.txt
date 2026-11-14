@@ -1,0 +1,84 @@
+import os
+import streamlit as st
+import pandas as pd
+
+st.set_page_config(page_title="Starbucks Nutrition Explorer", page_icon="☕", layout="centered")
+
+st.title("☕ Starbucks Coffee Customizer & Nutrition")
+st.write("Apni pasand ki coffee, cup size, aur milk select karein aur mukammal nutrition dekhein.")
+
+@st.cache_data
+def load_data():
+    csv_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+    if not csv_files:
+        return None
+    df = pd.read_csv(csv_files[0])
+    df.columns = df.columns.str.strip()
+    return df
+
+df = load_data()
+
+if df is None:
+    st.error("❌ CSV file nahi mili! GitHub par apni starbucks_clean.csv file upload karein.")
+else:
+    def find_col(keywords, fallback_index):
+        for c in df.columns:
+            if any(k in c.lower() for k in keywords):
+                return c
+        return df.columns[min(fallback_index, len(df.columns) - 1)]
+
+    cat_col = find_col(['category', 'type', 'group'], 0)
+    bev_col = find_col(['beverage', 'drink', 'item', 'name', 'product'], 1)
+    prep_col = find_col(['prep', 'size', 'milk', 'cup', 'serving'], 2)
+
+    st.sidebar.header("Apni Coffee Banayein")
+
+    # 1. Coffee Category
+    selected_category = st.sidebar.selectbox("1. Coffee Category Chunein:", df[cat_col].dropna().unique())
+    filtered_df = df[df[cat_col] == selected_category]
+
+    # 2. Coffee Name
+    selected_beverage = st.sidebar.selectbox("2. Coffee ka Naam Chunein:", filtered_df[bev_col].dropna().unique())
+    final_options = filtered_df[filtered_df[bev_col] == selected_beverage]
+
+    # 3. Cup Size & Milk Type
+    selected_prep = st.sidebar.selectbox("3. Cup Size aur Milk Chunein:", final_options[prep_col].dropna().unique())
+    result = final_options[final_options[prep_col] == selected_prep].iloc[0]
+
+    # Extra Customizations
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Extra Add-ons")
+    extra_sugar = st.sidebar.slider("Extra Sugar Add Karein (g):", 0, 50, 0)
+    extra_shots = st.sidebar.number_input("Extra Espresso Shots:", min_value=0, max_value=5, value=0)
+
+    def get_numeric(keyword):
+        cols = [c for c in df.columns if keyword in c.lower()]
+        if not cols:
+            return 0.0
+        val = str(result[cols[0]]).replace('g', '').replace('mg', '').replace('%', '').strip()
+        try:
+            return float(val)
+        except ValueError:
+            return 0.0
+
+    total_calories = get_numeric('calor') + (extra_sugar * 4) + (extra_shots * 5)
+    total_sugar = get_numeric('sugar') + extra_sugar
+    total_caffeine = get_numeric('caff') + (extra_shots * 75)
+    base_protein = get_numeric('protein')
+    base_fat = get_numeric('fat')
+
+    # Main Screen Display
+    st.subheader(f"🥤 {selected_beverage}")
+    st.info(f"**Category:** {selected_category}  |  **Cup & Milk:** {selected_prep}")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("⚡ Energy", f"{total_calories} kcal")
+    col2.metric("🍬 Sugar", f"{total_sugar} g", delta=f"+{extra_sugar}g" if extra_sugar > 0 else None)
+    col3.metric("☕ Caffeine", f"{total_caffeine} mg", delta=f"+{extra_shots*75}mg" if extra_shots > 0 else None)
+
+    col4, col5 = st.columns(2)
+    col4.metric("💪 Protein", f"{base_protein} g")
+    col5.metric("🧈 Total Fat", f"{base_fat} g")
+
+    with st.expander("Mukammal Dataset Row Dekhein"):
+        st.write(result)
